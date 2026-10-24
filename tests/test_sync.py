@@ -53,6 +53,20 @@ class ShellSafetyTests(unittest.TestCase):
         self.assertTrue(commands)
         self.assertTrue(all("origin HEAD:main" in line for line in commands))
 
+    def test_dirty_worktree_preflight_before_checkout(self):
+        guard = self.source.index('echo "LOCAL_CHANGES_DETECTED:')
+        checkout = self.source.index('git checkout HEAD -- automations/')
+        self.assertLess(guard, checkout)
+        self.assertIn('git diff --quiet --', self.source[:checkout])
+        self.assertIn('git diff --cached --quiet --', self.source[:checkout])
+        self.assertRegex(self.source[guard:checkout], r'exit [1-9]')
+
+    def test_untracked_split_files_guard(self):
+        guard = self.source.index('echo "LOCAL_SPLIT_FILES_DETECTED:')
+        checkout = self.source.index('git checkout HEAD -- automations/')
+        self.assertLess(guard, checkout)
+        self.assertIn('git ls-files --others --exclude-standard -- automations/ scripts/', self.source[:checkout])
+
     def test_lock_directory_has_exit_trap(self):
         self.assertIn("trap 'rmdir", self.source)
 

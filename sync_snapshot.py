@@ -11,6 +11,7 @@ import os
 import pathlib
 import shutil
 import sys
+import tempfile
 
 CONFIG = pathlib.Path("/config")
 FILES = ("automations.yaml", "scripts.yaml",
@@ -46,10 +47,36 @@ def restore(snapshot):
             target.unlink()
     for name in DIRS:
         source, target = snapshot / name, CONFIG / name
-        if target.exists():
-            shutil.rmtree(target)
-        if source.is_dir():
-            shutil.copytree(source, target)
+        # Stage the complete replacement before touching the live directory.
+        staged = None
+        previous = None
+        try:
+            if source.is_dir():
+                staged = pathlib.Path(tempfile.mkdtemp(
+                    prefix=f".{name}.sync-stage.", dir=CONFIG))
+                shutil.rmtree(staged)
+                shutil.copytree(source, staged)
+            if target.exists():
+                previous = pathlib.Path(tempfile.mkdtemp(
+                    prefix=f".{name}.sync-previous.", dir=CONFIG))
+                previous.rmdir()
+                os.replace(target, previous)
+            try:
+                if staged is not None:
+                    os.replace(staged, target)
+                    staged = None
+            except OSError:
+                if previous is not None:
+                    os.replace(previous, target)
+                    previous = None
+                raise
+            if previous is not None:
+                shutil.rmtree(previous)
+                previous = None
+        finally:
+            if staged is not None and staged.exists():
+                shutil.rmtree(staged)
+            # On cleanup failure, preserve the previous directory for inspection.
 
 
 def main():

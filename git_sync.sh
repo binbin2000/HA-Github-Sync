@@ -108,6 +108,14 @@ if ! mkdir "$LOCKDIR" 2>/dev/null; then
 fi
 trap 'rmdir "$LOCKDIR" 2>/dev/null' EXIT
 
+# An interrupted previous run may have left a recoverable snapshot.
+# Never overwrite, silently discard, or reconcile over that evidence.
+for previous_snapshot in /config/.git-sync-backup.*; do
+    [ -e "$previous_snapshot" ] || continue
+    echo "RECOVERY_REQUIRED: inspect previous snapshot $previous_snapshot"
+    exit 5
+done
+
 # Verify local changes before checkout. The sync deliberately removes tracked
 # split files after a successful run; those deletions are expected.
 if ! python3 sync_preflight.py; then

@@ -42,5 +42,17 @@ class RecoveryInspectionTests(unittest.TestCase):
                 sync_recover.recover(root / ".git-sync-backup.one", root)
 
 
+    def test_active_sync_lock_blocks_restore(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            backup = root / ".git-sync-backup.test"
+            backup.mkdir()
+            (backup / ".complete").write_text("complete")
+            (root / ".automations_sync.lock").mkdir()
+            with self.assertRaises(RuntimeError):
+                sync_recover.recover(backup, root)
+            self.assertTrue(backup.exists())
+
+
 if __name__ == "__main__":
     unittest.main()

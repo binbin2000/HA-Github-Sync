@@ -161,6 +161,13 @@ if [ "$RELATION" = "remote_ahead" ]; then
     fi
 fi
 
+# Keep a recoverable snapshot across both reconciliation domains.
+SNAPSHOT_DIR=$(mktemp -d /config/.git-sync-backup.XXXXXXXX) || exit 5
+if ! python3 sync_snapshot.py save "$SNAPSHOT_DIR"; then
+    echo "SNAPSHOT_FAILED: inspect $SNAPSHOT_DIR"
+    exit 5
+fi
+
 # Reconcile automations.yaml <-> automations/. Normally two-way; if
 # --resolve automations was requested, force the chosen direction
 # instead ("local" = keep automations.yaml = force flat, "git" = keep
@@ -193,6 +200,11 @@ echo "scripts_exit_code=$scripts_exit"
 # Fail closed: never commit or push after either reconciliation fails.
 if [ "$automations_exit" -ge 2 ] || [ "$scripts_exit" -ge 2 ]; then
     echo "SYNC_ABORTED: conflict or validation failure; nothing pushed"
+    if ! python3 sync_snapshot.py restore "$SNAPSHOT_DIR"; then
+        echo "ROLLBACK_FAILED: snapshot retained at $SNAPSHOT_DIR"
+        exit 5
+    fi
+    python3 sync_snapshot.py discard "$SNAPSHOT_DIR" || exit 5
     exit 3
 fi
 
@@ -214,6 +226,11 @@ elif [ "$RELATION" = "local_ahead" ]; then
         echo "GIT_PUSH_FAILED"
         exit 1
     fi
+fi
+
+if ! python3 sync_snapshot.py discard "$SNAPSHOT_DIR"; then
+    echo "SNAPSHOT_CLEANUP_FAILED: inspect $SNAPSHOT_DIR"
+    exit 5
 fi
 
 # Remove both split folders from local disk so /config only shows

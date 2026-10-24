@@ -1,0 +1,21 @@
+name: Safe Sync tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: python3 -m pip install --break-system-packages pyyaml
+      - name: Check shell syntax
+        run: bash -n git_sync.sh
+      - name: Run unit and regression tests
+        run: python3 -m unittest discover -s tests -v

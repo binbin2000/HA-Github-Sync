@@ -135,6 +135,19 @@ if ! git fetch origin main; then
     exit 1
 fi
 
+# Capture HA state and Git commit identities before any merge changes HEAD.
+# A retained snapshot requires explicit recovery, never automatic Git reset.
+# Keep a recoverable snapshot across both reconciliation domains.
+SNAPSHOT_DIR=$(mktemp -d /config/.git-sync-backup.XXXXXXXX) || exit 5
+if ! python3 sync_snapshot.py save "$SNAPSHOT_DIR"; then
+    echo "SNAPSHOT_FAILED: inspect $SNAPSHOT_DIR"
+    exit 5
+fi
+if ! python3 sync_git_metadata.py capture "$SNAPSHOT_DIR"; then
+    echo "GIT_METADATA_FAILED: inspect $SNAPSHOT_DIR"
+    exit 5
+fi
+
 LOCAL_HASH=$(git rev-parse HEAD)
 REMOTE_HASH=$(git rev-parse origin/main)
 
@@ -157,24 +170,18 @@ if [ "$RELATION" = "diverged" ]; then
     else
         git merge --abort
 
-        echo "GIT_CONFLICT: local and remote histories diverged; manual resolution required"
+        echo "GIT_CONFLICT: snapshot and Git metadata retained at $SNAPSHOT_DIR; manual resolution required"
         exit 2
     fi
 fi
 
 if [ "$RELATION" = "remote_ahead" ]; then
     if ! git merge --ff-only origin/main; then
-        echo "GIT_MERGE_FAILED"
+        echo "GIT_MERGE_FAILED: snapshot and Git metadata retained at $SNAPSHOT_DIR"
         exit 1
     fi
 fi
 
-# Keep a recoverable snapshot across both reconciliation domains.
-SNAPSHOT_DIR=$(mktemp -d /config/.git-sync-backup.XXXXXXXX) || exit 5
-if ! python3 sync_snapshot.py save "$SNAPSHOT_DIR"; then
-    echo "SNAPSHOT_FAILED: inspect $SNAPSHOT_DIR"
-    exit 5
-fi
 
 # Once a Git commit exists, failed publication must preserve that commit.
 # Discard only the temporary snapshot; the next run can retry the push.
@@ -219,6 +226,11 @@ if [ "$automations_exit" -ge 2 ] || [ "$scripts_exit" -ge 2 ]; then
     echo "SYNC_ABORTED: conflict or validation failure; nothing pushed"
     if ! python3 sync_snapshot.py restore "$SNAPSHOT_DIR"; then
         echo "ROLLBACK_FAILED: snapshot retained at $SNAPSHOT_DIR"
+        exit 5
+    fi
+    # Preserve evidence if the merge advanced HEAD before reconciliation failed.
+    if [ "$(git rev-parse HEAD)" != "$LOCAL_HASH" ]; then
+        echo "RECOVERY_REQUIRED: Git HEAD changed; snapshot retained at $SNAPSHOT_DIR"
         exit 5
     fi
     python3 sync_snapshot.py discard "$SNAPSHOT_DIR" || exit 5

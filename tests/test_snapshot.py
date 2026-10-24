@@ -55,5 +55,55 @@ class SnapshotTests(unittest.TestCase):
                     snapshot.save(backup)
 
 
+    def test_failed_directory_staging_preserves_live_directory(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            backup = root / ".git-sync-backup.test"
+            backup.mkdir()
+            live = root / "automations"
+            live.mkdir()
+            (live / "a.yaml").write_text("original")
+            with patch.object(snapshot, "CONFIG", root):
+                snapshot.save(backup)
+                (live / "a.yaml").write_text("newer")
+                original_copytree = snapshot.shutil.copytree
+
+                def fail_stage(src, dst, *args, **kwargs):
+                    if pathlib.Path(src) == backup / "automations":
+                        raise OSError("injected staging failure")
+                    return original_copytree(src, dst, *args, **kwargs)
+
+                with patch.object(snapshot.shutil, "copytree", side_effect=fail_stage):
+                    with self.assertRaises(OSError):
+                        snapshot.restore(backup)
+            self.assertEqual((live / "a.yaml").read_text(), "newer")
+            self.assertEqual((backup / "automations" / "a.yaml").read_text(), "original")
+            self.assertFalse(list(root.glob(".automations.sync-stage.*")))
+
+    def test_failed_directory_swap_restores_previous_directory(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            backup = root / ".git-sync-backup.test"
+            backup.mkdir()
+            live = root / "automations"
+            live.mkdir()
+            (live / "a.yaml").write_text("original")
+            with patch.object(snapshot, "CONFIG", root):
+                snapshot.save(backup)
+                (live / "a.yaml").write_text("newer")
+                real_replace = snapshot.os.replace
+
+                def fail_new_directory(src, dst):
+                    if ".automations.sync-stage." in str(src):
+                        raise OSError("injected swap failure")
+                    return real_replace(src, dst)
+
+                with patch.object(snapshot.os, "replace", side_effect=fail_new_directory):
+                    with self.assertRaises(OSError):
+                        snapshot.restore(backup)
+            self.assertEqual((live / "a.yaml").read_text(), "newer")
+            self.assertTrue((backup / ".complete").exists())
+
+
 if __name__ == "__main__":
     unittest.main()

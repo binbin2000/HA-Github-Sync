@@ -83,6 +83,8 @@ from pathlib import Path
 
 import yaml
 
+from sync_atomic import atomic_write_text
+
 CONFIG_DIR = Path("/config")
 SCRIPTS_FILE = CONFIG_DIR / "scripts.yaml"
 SPLIT_DIR = CONFIG_DIR / "scripts"
@@ -137,7 +139,7 @@ def canonical_hash(scripts: dict) -> str:
 
 def write_flat(scripts: dict):
     ordered = {k: scripts[k] for k in sorted(scripts.keys(), key=str)}
-    SCRIPTS_FILE.write_text(dump_to_str(ordered))
+    atomic_write_text(SCRIPTS_FILE, dump_to_str(ordered))
 
 
 def write_split(scripts: dict):
@@ -159,9 +161,7 @@ def load_state() -> dict:
 
 
 def save_state(flat_hash: str, split_hash: str):
-    STATE_FILE.write_text(
-        dump_to_str({"last_flat_hash": flat_hash, "last_split_hash": split_hash})
-    )
+    atomic_write_text(STATE_FILE, dump_to_str({"last_flat_hash": flat_hash, "last_split_hash": split_hash}))
 
 
 def bootstrap():

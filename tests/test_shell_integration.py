@@ -38,7 +38,7 @@ class ShellSyncIntegrationTests(unittest.TestCase):
                 source = (ROOT / name).read_text()
                 # The replacement is restricted to a disposable copy.
                 (config / name).write_text(source.replace("/config", str(config)))
-            (config / ".gitignore").write_text((ROOT / ".gitignore").read_text() + "\\nautomations.yaml\\nscripts.yaml\\n.*_sync_state.yaml\\n")
+            (config / ".gitignore").write_text((ROOT / ".gitignore").read_text() + "\nautomations.yaml\nscripts.yaml\n.*_sync_state.yaml\n")
             (config / "automations.yaml").write_text(
                 "- id: '1'\n  alias: Kitchen\n  trigger: []\n  action: []\n")
             (config / "scripts.yaml").write_text(

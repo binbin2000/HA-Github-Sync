@@ -72,5 +72,26 @@ class RecoveryInspectionTests(unittest.TestCase):
             self.assertEqual((copies[0] / "automations.yaml").read_text(), "after")
 
 
+    def test_failed_restore_keeps_both_recovery_copies(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            backup = root / ".git-sync-backup.test"
+            backup.mkdir()
+            target = root / "scripts.yaml"
+            target.write_text("previous")
+            with patch.object(sync_snapshot, "CONFIG", root):
+                sync_snapshot.save(backup)
+            target.write_text("newer")
+            with patch.object(sync_snapshot, "restore", side_effect=OSError("simulated interruption")):
+                with self.assertRaises(OSError):
+                    sync_recover.recover(backup, root)
+            self.assertTrue((backup / ".complete").exists())
+            self.assertEqual((backup / "scripts.yaml").read_text(), "previous")
+            self.assertEqual(target.read_text(), "newer")
+            rescues = list(root.glob(".git-sync-recovery.*"))
+            self.assertEqual(len(rescues), 1)
+            self.assertEqual((rescues[0] / "scripts.yaml").read_text(), "newer")
+
+
 if __name__ == "__main__":
     unittest.main()

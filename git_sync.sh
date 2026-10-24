@@ -168,6 +168,15 @@ if ! python3 sync_snapshot.py save "$SNAPSHOT_DIR"; then
     exit 5
 fi
 
+# Once a Git commit exists, failed publication must preserve that commit.
+# Discard only the temporary snapshot; the next run can retry the push.
+discard_snapshot_after_git_failure() {
+    if ! python3 sync_snapshot.py discard "$SNAPSHOT_DIR"; then
+        echo "SNAPSHOT_CLEANUP_FAILED: inspect $SNAPSHOT_DIR"
+        return 5
+    fi
+}
+
 # Reconcile automations.yaml <-> automations/. Normally two-way; if
 # --resolve automations was requested, force the chosen direction
 # instead ("local" = keep automations.yaml = force flat, "git" = keep
@@ -218,12 +227,14 @@ if ! git diff --cached --quiet; then
         exit 1
     fi
     if ! git push origin HEAD:main; then
-        echo "GIT_PUSH_FAILED"
+        echo "GIT_PUSH_FAILED: local commit preserved; retry on next sync"
+        discard_snapshot_after_git_failure || exit 5
         exit 1
     fi
 elif [ "$RELATION" = "local_ahead" ]; then
     if ! git push origin HEAD:main; then
-        echo "GIT_PUSH_FAILED"
+        echo "GIT_PUSH_FAILED: local commit preserved; retry on next sync"
+        discard_snapshot_after_git_failure || exit 5
         exit 1
     fi
 fi

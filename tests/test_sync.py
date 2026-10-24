@@ -43,7 +43,7 @@ class ShellSafetyTests(unittest.TestCase):
     def test_git_failures_are_nonzero(self):
         for marker in ("GIT_FETCH_FAILED", "GIT_MERGE_FAILED", "GIT_COMMIT_FAILED", "GIT_ADD_FAILED"):
             with self.subTest(marker=marker):
-                self.assertRegex(self.source, re.escape('echo "' + marker + '"') + r'\s*\n\s*exit [1-9]')
+                self.assertRegex(self.source, re.escape('echo "' + marker) + r'(?::[^\n"]*)?"\s*\n\s*exit [1-9]')
         # Push failures intentionally clean up the snapshot before exiting.
         # Both push branches must still report failure with a nonzero exit.
         push_branches = self.source.split('if ! git push origin HEAD:main; then')[1:]

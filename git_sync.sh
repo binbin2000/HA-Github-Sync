@@ -108,6 +108,20 @@ if ! mkdir "$LOCKDIR" 2>/dev/null; then
 fi
 trap 'rmdir "$LOCKDIR" 2>/dev/null' EXIT
 
+# Fail closed before any checkout, fetch or merge if tracked files have
+# uncommitted changes. Git operations must never overwrite local edits.
+if ! git diff --quiet -- || ! git diff --cached --quiet --; then
+    echo "LOCAL_CHANGES_DETECTED: commit or stash local changes before syncing"
+    exit 4
+fi
+
+# Untracked split files could be overwritten by checkout or cleanup.
+# Leave them untouched and ask for manual inspection instead.
+if [ -n "$(git ls-files --others --exclude-standard -- automations/ scripts/)" ]; then
+    echo "LOCAL_SPLIT_FILES_DETECTED: inspect untracked split files before syncing"
+    exit 4
+fi
+
 # Restore both split folders from the last commit (undoes the
 # previous run's cleanup, or brings them back if a prior conflict
 # left them in place) so the working tree is clean before we

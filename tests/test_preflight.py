@@ -34,6 +34,11 @@ class PreflightTests(unittest.TestCase):
     def test_git_failure_is_not_treated_as_clean(self):
         self.assertFalse(module.safe_status(b"invalid\0")[0])
 
+    def test_recovery_directories_are_gitignored(self):
+        ignore = (ROOT / ".gitignore").read_text()
+        self.assertIn(".git-sync-recovery.*/", ignore)
+        self.assertIn(".git-sync-backup.*/", ignore)
+
     def test_actual_git_status(self):
         with tempfile.TemporaryDirectory() as temp:
             path = pathlib.Path(temp)

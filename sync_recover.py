@@ -14,6 +14,7 @@ import sys
 import tempfile
 
 import sync_snapshot
+import sync_git_metadata
 
 CONFIG = pathlib.Path("/config")
 
@@ -30,6 +31,7 @@ def inspect(config=CONFIG):
     for snapshot in found:
         complete = (snapshot / ".complete").is_file()
         print(f"{snapshot}: {'COMPLETE' if complete else 'INCOMPLETE'}")
+        print(f"  {sync_git_metadata.inspect(snapshot, config)}")
         for name in (*sync_snapshot.FILES, *sync_snapshot.DIRS):
             if (snapshot / name).exists():
                 print(f"  {name}")
@@ -46,6 +48,18 @@ def recover(snapshot, config=CONFIG):
         raise RuntimeError("Multiple snapshots: manual investigation required")
     if (config / ".automations_sync.lock").exists():
         raise RuntimeError("Sync lock exists: stop sync and investigate before recovery")
+    metadata = snapshot / "git-state.json"
+    if metadata.is_file():
+        import json
+        try:
+            recorded = json.loads(metadata.read_text())["head_before_merge"]
+            current = sync_git_metadata.git("rev-parse", "HEAD", cwd=config)
+        except (OSError, RuntimeError, ValueError, KeyError) as exc:
+            raise RuntimeError(f"Cannot verify Git history: {exc}") from exc
+        if current != recorded:
+            raise RuntimeError(
+                "Git HEAD changed since snapshot: inspect Git metadata and "
+                "resolve Git/HA consistency manually before restoring")
 
     rescue = pathlib.Path(tempfile.mkdtemp(prefix=".git-sync-recovery.", dir=config))
     # The rescue copy is intentionally retained even after successful recovery.

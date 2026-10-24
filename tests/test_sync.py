@@ -53,6 +53,16 @@ class ShellSafetyTests(unittest.TestCase):
         self.assertTrue(commands)
         self.assertTrue(all("origin HEAD:main" in line for line in commands))
 
+    def test_failed_push_keeps_local_commit_and_discards_snapshot(self):
+        source = self.source
+        self.assertEqual(source.count("discard_snapshot_after_git_failure || exit 5"), 2)
+        self.assertEqual(source.count("GIT_PUSH_FAILED: local commit preserved"), 2)
+        for part in source.split('if ! git push origin HEAD:main; then')[1:]:
+            branch = part.split("fi", 1)[0]
+            self.assertIn("discard_snapshot_after_git_failure || exit 5", branch)
+            self.assertNotIn("git reset", branch)
+            self.assertNotIn("sync_snapshot.py restore", branch)
+
     def test_lock_directory_has_exit_trap(self):
         self.assertIn("trap 'rmdir", self.source)
 

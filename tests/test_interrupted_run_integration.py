@@ -13,7 +13,7 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SOURCES = ("git_sync.sh", "sync_preflight.py", "sync_snapshot.py",
-           "sync_atomic.py", "sync_automations.py", "sync_scripts.py")
+           "sync_atomic.py", "sync_git_metadata.py", "sync_automations.py", "sync_scripts.py")
 
 
 def run(*args, cwd=None, check=True, env=None):

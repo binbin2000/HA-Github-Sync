@@ -155,17 +155,8 @@ if [ "$RELATION" = "diverged" ]; then
     else
         git merge --abort
 
-        LOCAL_TIME=$(git log -1 --format=%ct HEAD)
-        REMOTE_TIME=$(git log -1 --format=%ct origin/main)
-
-        if [ "$LOCAL_TIME" -ge "$REMOTE_TIME" ]; then
-            echo "DIVERGED_RESOLVED=local"
-            git push --force
-        else
-            echo "DIVERGED_RESOLVED=remote"
-            git reset --hard origin/main
-        fi
-        RELATION="same"
+        echo "GIT_CONFLICT: local and remote histories diverged; manual resolution required"
+        exit 2
     fi
 fi
 
@@ -204,6 +195,12 @@ else
 fi
 scripts_exit=$?
 echo "scripts_exit_code=$scripts_exit"
+
+# Fail closed: never commit or push after either reconciliation fails.
+if [ "$automations_exit" -ge 2 ] || [ "$scripts_exit" -ge 2 ]; then
+    echo "SYNC_ABORTED: conflict or validation failure; nothing pushed"
+    exit 3
+fi
 
 git add automations/ scripts/
 if ! git diff --cached --quiet; then

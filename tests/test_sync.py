@@ -48,7 +48,7 @@ class ShellSafetyTests(unittest.TestCase):
     def test_no_implicit_git_push_target(self):
         commands = [
             line.strip() for line in self.source.splitlines()
-            if line.lstrip().startswith("git push ")
+            if "git push " in line and not line.lstrip().startswith("#")
         ]
         self.assertTrue(commands)
         self.assertTrue(all("origin HEAD:main" in line for line in commands))

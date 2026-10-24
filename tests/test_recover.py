@@ -23,5 +23,24 @@ class RecoveryInspectionTests(unittest.TestCase):
             self.assertIn("INCOMPLETE", str(output.call_args_list))
 
 
+    def test_restore_requires_complete_snapshot(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            backup = root / ".git-sync-backup.test"
+            backup.mkdir()
+            with self.assertRaises(RuntimeError):
+                sync_recover.recover(backup, root)
+
+    def test_restore_rejects_multiple_snapshots(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            for suffix in ("one", "two"):
+                backup = root / (".git-sync-backup." + suffix)
+                backup.mkdir()
+                (backup / ".complete").write_text("complete")
+            with self.assertRaises(RuntimeError):
+                sync_recover.recover(root / ".git-sync-backup.one", root)
+
+
 if __name__ == "__main__":
     unittest.main()

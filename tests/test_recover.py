@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import patch
 
 import sync_recover
+import sync_snapshot
 
 
 class RecoveryInspectionTests(unittest.TestCase):
@@ -52,6 +53,23 @@ class RecoveryInspectionTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 sync_recover.recover(backup, root)
             self.assertTrue(backup.exists())
+
+
+    def test_restore_keeps_copy_of_newer_changes(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            backup = root / ".git-sync-backup.test"
+            backup.mkdir()
+            target = root / "automations.yaml"
+            target.write_text("before")
+            with patch.object(sync_snapshot, "CONFIG", root):
+                sync_snapshot.save(backup)
+            target.write_text("after")
+            sync_recover.recover(backup, root)
+            self.assertEqual(target.read_text(), "before")
+            copies = list(root.glob(".git-sync-recovery.*"))
+            self.assertEqual(len(copies), 1)
+            self.assertEqual((copies[0] / "automations.yaml").read_text(), "after")
 
 
 if __name__ == "__main__":

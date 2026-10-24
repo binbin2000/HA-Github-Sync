@@ -108,6 +108,13 @@ if ! mkdir "$LOCKDIR" 2>/dev/null; then
 fi
 trap 'rmdir "$LOCKDIR" 2>/dev/null' EXIT
 
+# Verify local changes before checkout. The sync deliberately removes tracked
+# split files after a successful run; those deletions are expected.
+if ! python3 sync_preflight.py; then
+    echo "LOCAL_CHANGES_DETECTED"
+    exit 4
+fi
+
 # Restore both split folders from the last commit (undoes the
 # previous run's cleanup, or brings them back if a prior conflict
 # left them in place) so the working tree is clean before we

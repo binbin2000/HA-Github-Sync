@@ -41,9 +41,18 @@ class ShellSafetyTests(unittest.TestCase):
         self.assertRegex(self.source[check:staging], r"exit [1-9]")
 
     def test_git_failures_are_nonzero(self):
-        for marker in ("GIT_FETCH_FAILED", "GIT_MERGE_FAILED", "GIT_PUSH_FAILED", "GIT_COMMIT_FAILED", "GIT_ADD_FAILED"):
+        for marker in ("GIT_FETCH_FAILED", "GIT_MERGE_FAILED", "GIT_COMMIT_FAILED", "GIT_ADD_FAILED"):
             with self.subTest(marker=marker):
                 self.assertRegex(self.source, re.escape('echo "' + marker + '"') + r'\s*\n\s*exit [1-9]')
+        # Push failures intentionally clean up the snapshot before exiting.
+        # Both push branches must still report failure with a nonzero exit.
+        push_branches = self.source.split('if ! git push origin HEAD:main; then')[1:]
+        self.assertEqual(len(push_branches), 2)
+        for branch in push_branches:
+            with self.subTest(marker="GIT_PUSH_FAILED"):
+                failure_branch = branch.split("\n    fi", 1)[0]
+                self.assertIn("GIT_PUSH_FAILED", failure_branch)
+                self.assertRegex(failure_branch, r"exit [1-9]")
 
     def test_no_implicit_git_push_target(self):
         commands = [

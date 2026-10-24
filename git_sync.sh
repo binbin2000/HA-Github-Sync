@@ -54,20 +54,10 @@
 #                                              git merge is attempted
 #                                              first (safe for edits
 #                                              to different files);
-#                                              only a genuine same-
-#                                              file conflict falls
-#                                              back to a timestamp-
-#                                              based override, which
-#                                              discards the older
-#                                              side's commit entirely.
-#                                              This is a DIFFERENT
-#                                              kind of conflict from
-#                                              the working-file one
-#                                              --resolve is for --
-#                                              this one resolves
-#                                              itself automatically.
+#                                              conflicting edits stop the sync
+#                                              for manual resolution.
 #
-# Always exits 0 -- status is communicated via stdout text:
+# Exits nonzero on failures; status details are also printed to stdout:
 #   LOCK_BUSY                     - another sync was already running, skipped
 #   GIT_FETCH_FAILED              - couldn't reach GitHub, nothing else ran
 #   GIT_MERGE_FAILED              - fast-forward merge from remote failed;
@@ -77,17 +67,14 @@
 #   DIVERGED_MERGED_CLEAN         - both sides had independent commits,
 #                                   but touched different files -- merged
 #                                   automatically, nothing lost
-#   DIVERGED_RESOLVED=local       - genuine content conflict; local was
-#                                   newer, force-pushed over remote
-#   DIVERGED_RESOLVED=remote      - genuine content conflict; remote was
-#                                   newer, local's conflicting commit(s)
-#                                   discarded
+#   GIT_CONFLICT                  - divergent Git histories could not be merged
+#   SYNC_ABORTED                  - Python reconciliation failed
 #   exit_code=0/1/2/3             - automations result (see
 #                                   sync_automations.py's docstring)
 #   scripts_exit_code=0/1/2/3     - scripts result (see
 #                                   sync_scripts.py's docstring)
 
-cd /config || { echo "ERROR: cannot cd to /config"; exit 0; }
+cd /config || { echo "ERROR: cannot cd to /config"; exit 1; }
 
 RESOLVE_DOMAIN=""
 RESOLVE_DIRECTION=""
@@ -95,11 +82,11 @@ RESOLVE_DIRECTION=""
 if [ "$1" = "--resolve" ]; then
     if [ "$2" != "automations" ] && [ "$2" != "scripts" ]; then
         echo "GIT_RESOLVE_BAD_ARGS"
-        exit 0
+        exit 2
     fi
     if [ "$3" != "local" ] && [ "$3" != "git" ]; then
         echo "GIT_RESOLVE_BAD_ARGS"
-        exit 0
+        exit 2
     fi
     RESOLVE_DOMAIN="$2"
     RESOLVE_DIRECTION="$3"
@@ -130,7 +117,7 @@ git checkout HEAD -- scripts/ 2>/dev/null
 
 if ! git fetch origin main; then
     echo "GIT_FETCH_FAILED"
-    exit 0
+    exit 1
 fi
 
 LOCAL_HASH=$(git rev-parse HEAD)
@@ -163,7 +150,7 @@ fi
 if [ "$RELATION" = "remote_ahead" ]; then
     if ! git merge --ff-only origin/main; then
         echo "GIT_MERGE_FAILED"
-        exit 0
+        exit 1
     fi
 fi
 
@@ -202,12 +189,24 @@ if [ "$automations_exit" -ge 2 ] || [ "$scripts_exit" -ge 2 ]; then
     exit 3
 fi
 
-git add automations/ scripts/
+if ! git add -A -- automations/ scripts/; then
+    echo "GIT_ADD_FAILED"
+    exit 1
+fi
 if ! git diff --cached --quiet; then
-    git commit -m "Automation/script sync $(date +%F_%T)"
-    git push
+    if ! git commit -m "Automation/script sync $(date +%F_%T)"; then
+        echo "GIT_COMMIT_FAILED"
+        exit 1
+    fi
+    if ! git push origin HEAD:main; then
+        echo "GIT_PUSH_FAILED"
+        exit 1
+    fi
 elif [ "$RELATION" = "local_ahead" ]; then
-    git push
+    if ! git push origin HEAD:main; then
+        echo "GIT_PUSH_FAILED"
+        exit 1
+    fi
 fi
 
 # Remove both split folders from local disk so /config only shows

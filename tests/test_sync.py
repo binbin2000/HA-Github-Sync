@@ -72,6 +72,15 @@ class ShellSafetyTests(unittest.TestCase):
             self.assertNotIn("git reset", branch)
             self.assertNotIn("sync_snapshot.py restore", branch)
 
+    def test_interrupted_snapshot_blocks_before_checkout_and_reconciliation(self):
+        guard = self.source.index('echo "RECOVERY_REQUIRED:')
+        checkout = self.source.index('git checkout HEAD -- automations/')
+        reconciliation = self.source.index('python3 sync_automations.py')
+        self.assertLess(guard, checkout)
+        self.assertLess(guard, reconciliation)
+        self.assertIn('for previous_snapshot in /config/.git-sync-backup.*; do', self.source)
+        self.assertRegex(self.source[guard:checkout], r'exit [1-9]')
+
     def test_lock_directory_has_exit_trap(self):
         self.assertIn("trap 'rmdir", self.source)
 

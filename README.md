@@ -385,3 +385,48 @@ You haven't run the one-time bootstrap step for that domain yet — see step 7.
 - **Comments in your YAML are not preserved.** Every sync rewrites the affected files fresh from the parsed data. If you rely on comments for notes, they won't survive a sync.
 - **The split folders (`automations/`, `scripts/`) only exist locally for a few seconds while a sync is running.** If you go looking for them in a file browser between syncs, you won't find them — that's expected, not a bug.
 - **This was built for one specific setup and workflow.** It works well for that, but it isn't a polished, general-purpose tool — expect to adjust it if your needs differ meaningfully from what's described here.
+
+
+## Safe recovery after interrupted synchronization (v0.2)
+
+If synchronization prints `RECOVERY_REQUIRED`, **do not delete** any
+`/config/.git-sync-backup.*` directory or run `git reset --hard`.
+Scheduled and manual sync attempts are blocked until the evidence is handled.
+
+1. Stop the scheduled sync automation. Do not run another sync while investigating.
+2. Inspect snapshots and the recorded Git commits:
+
+   ```bash
+   cd /config
+   python3 sync_recover.py inspect
+   git status
+   git log -5 --oneline --decorate
+   git rev-parse HEAD
+   git rev-parse origin/main
+   ```
+
+3. Review the snapshot's `git-state.json` (`head_before_merge`,
+   `remote_before_merge`, `branch`) and compare it with current `HEAD`.
+   If `HEAD` changed, **do not run automatic restore**: investigate Git and
+   Home Assistant state together. The restore command deliberately refuses
+   this case. It never resets Git or force-pushes.
+4. Only when Git history is unchanged, there is exactly one complete snapshot,
+   and no sync lock is active, an operator may explicitly restore the HA files:
+
+   ```bash
+   python3 sync_recover.py restore /config/.git-sync-backup.EXACT_NAME --confirm
+   ```
+
+   Replace `EXACT_NAME` with the actual directory name shown by `inspect`.
+   Recovery saves the overwritten HA state in `/config/.git-sync-recovery.*`.
+   Inspect that copy before deleting anything.
+5. Verify `automations.yaml`, `scripts.yaml`, and the Git working tree.
+   Only then re-enable scheduled sync.
+
+**Important:** A complete snapshot with missing Git metadata (e.g. created by
+an older version) requires manual inspection. Do not assume Git history is
+unchanged merely because the metadata is absent. An incomplete snapshot must
+never be restored automatically.
+
+The recovery mechanism intentionally favors preserving data and requiring a
+manual decision over automatically rewriting Git history.

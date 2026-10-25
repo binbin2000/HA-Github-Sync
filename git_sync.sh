@@ -224,13 +224,14 @@ echo "scripts_exit_code=$scripts_exit"
 # Fail closed: never commit or push after either reconciliation fails.
 if [ "$automations_exit" -ge 2 ] || [ "$scripts_exit" -ge 2 ]; then
     echo "SYNC_ABORTED: conflict or validation failure; nothing pushed"
-    if ! python3 sync_snapshot.py restore "$SNAPSHOT_DIR"; then
-        echo "ROLLBACK_FAILED: snapshot retained at $SNAPSHOT_DIR"
+    # Never restore HA files automatically when Git HEAD changed.
+    # Preserve the live state and snapshot for an explicit recovery decision.
+    if [ "$(git rev-parse HEAD)" != "$LOCAL_HASH" ]; then
+        echo "RECOVERY_REQUIRED: Git HEAD changed; HA files untouched; snapshot retained at $SNAPSHOT_DIR"
         exit 5
     fi
-    # Preserve evidence if the merge advanced HEAD before reconciliation failed.
-    if [ "$(git rev-parse HEAD)" != "$LOCAL_HASH" ]; then
-        echo "RECOVERY_REQUIRED: Git HEAD changed; snapshot retained at $SNAPSHOT_DIR"
+    if ! python3 sync_snapshot.py restore "$SNAPSHOT_DIR"; then
+        echo "ROLLBACK_FAILED: snapshot retained at $SNAPSHOT_DIR"
         exit 5
     fi
     python3 sync_snapshot.py discard "$SNAPSHOT_DIR" || exit 5

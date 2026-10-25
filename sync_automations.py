@@ -93,6 +93,8 @@ from pathlib import Path
 
 import yaml
 
+from sync_atomic import atomic_write_text
+
 CONFIG_DIR = Path("/config")
 AUTOMATIONS_FILE = CONFIG_DIR / "automations.yaml"
 SPLIT_DIR = CONFIG_DIR / "automations"
@@ -170,7 +172,7 @@ def write_flat(automations: list):
         key = a.get("id") or a.get("alias")
         by_id[key] = a
     ordered = [by_id[k] for k in sorted(by_id.keys(), key=str)]
-    AUTOMATIONS_FILE.write_text(dump_to_str(ordered))
+    atomic_write_text(AUTOMATIONS_FILE, dump_to_str(ordered))
 
 
 def write_split(automations: list):
@@ -199,9 +201,7 @@ def load_state() -> dict:
 
 
 def save_state(flat_hash: str, split_hash: str):
-    STATE_FILE.write_text(
-        dump_to_str({"last_flat_hash": flat_hash, "last_split_hash": split_hash})
-    )
+    atomic_write_text(STATE_FILE, dump_to_str({"last_flat_hash": flat_hash, "last_split_hash": split_hash}))
 
 
 def bootstrap():

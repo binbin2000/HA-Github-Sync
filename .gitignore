@@ -1,0 +1,4 @@
+# Temporary and retained recovery directories are local-only.
+# The sync checks .git-sync-backup.* explicitly before any checkout.
+.git-sync-backup.*/
+.git-sync-recovery.*/

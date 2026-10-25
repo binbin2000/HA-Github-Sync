@@ -54,6 +54,16 @@ class ShellSafetyTests(unittest.TestCase):
                 self.assertIn("GIT_PUSH_FAILED", failure_branch)
                 self.assertRegex(failure_branch, r"exit [1-9]")
 
+    def test_changed_head_blocks_rollback_before_restore(self):
+        start = self.source.index('if [ "$automations_exit" -ge 2 ]')
+        end = self.source.index('git add -A -- automations/ scripts/', start)
+        failure_path = self.source[start:end]
+        guard = failure_path.index('if [ "$(git rev-parse HEAD)" != "$LOCAL_HASH" ]; then')
+        restore = failure_path.index('python3 sync_snapshot.py restore "$SNAPSHOT_DIR"')
+        self.assertLess(guard, restore)
+        self.assertIn('RECOVERY_REQUIRED: Git HEAD changed', failure_path[guard:restore])
+        self.assertRegex(failure_path[guard:restore], r'exit 5')
+
     def test_no_implicit_git_push_target(self):
         commands = [
             line.strip() for line in self.source.splitlines()

@@ -1,11 +1,27 @@
 """Recovery inspection tests in temporary directories."""
 import pathlib
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
 
 import sync_recover
 import sync_snapshot
+import sync_git_metadata
+
+
+def capture_metadata(root, backup):
+    def git(*args):
+        return subprocess.run(['git', *args], cwd=root, check=True,
+                              capture_output=True, text=True).stdout.strip()
+    git('init', '-b', 'main')
+    git('config', 'user.name', 'Recovery Test')
+    git('config', 'user.email', 'test@example.invalid')
+    (root / 'tracked').write_text('baseline')
+    git('add', 'tracked')
+    git('commit', '-m', 'baseline')
+    git('update-ref', 'refs/remotes/origin/main', git('rev-parse', 'HEAD'))
+    sync_git_metadata.capture(backup, root)
 
 
 class RecoveryInspectionTests(unittest.TestCase):
@@ -65,6 +81,7 @@ class RecoveryInspectionTests(unittest.TestCase):
             with patch.object(sync_snapshot, "CONFIG", root):
                 sync_snapshot.save(backup)
             target.write_text("after")
+            capture_metadata(root, backup)
             sync_recover.recover(backup, root)
             self.assertEqual(target.read_text(), "before")
             copies = list(root.glob(".git-sync-recovery.*"))
@@ -82,6 +99,7 @@ class RecoveryInspectionTests(unittest.TestCase):
             with patch.object(sync_snapshot, "CONFIG", root):
                 sync_snapshot.save(backup)
             target.write_text("newer")
+            capture_metadata(root, backup)
             with patch.object(sync_snapshot, "restore", side_effect=OSError("simulated interruption")):
                 with self.assertRaises(OSError):
                     sync_recover.recover(backup, root)

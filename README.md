@@ -430,3 +430,29 @@ never be restored automatically.
 
 The recovery mechanism intentionally favors preserving data and requiring a
 manual decision over automatically rewriting Git history.
+
+A lock is never removed just because it is old. If a terminated run left
+`/config/.automations_sync.lock`, stop scheduled sync and verify that no sync
+process or child process is running. Only then remove the empty lock directory
+with `rmdir /config/.automations_sync.lock` and continue with inspection above.
+An existing lock blocks both sync and explicit recovery.
+
+Unexpected Python errors (including invalid YAML and failed writes) abort
+reconciliation with exit 3. Exit 1 from a reconciler is reserved for a successful
+split-to-flat update; the overall shell still exits 0 on successful sync.
+
+### Isolated acceptance tests
+
+On Linux with Bash, Git, Python 3 and PyYAML installed:
+
+```bash
+bash -n git_sync.sh
+python3 -m unittest discover -s tests -v
+```
+
+`tests/test_acceptance.py` uses temporary directories and local bare Git remotes.
+It rewrites `/config` only in disposable source copies. No Home Assistant or
+GitHub credentials are needed; test Git processes allow only the `file` protocol.
+The suite covers both sync directions, clean and conflicting divergence,
+reconciliation rollback, changed-HEAD guards, rejected pushes, SIGKILL recovery,
+active locks, missing metadata, parse failures and injected write failures.

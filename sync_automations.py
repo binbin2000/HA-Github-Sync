@@ -334,4 +334,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as exc:
+        # Exit 1 means successful split->flat reconciliation to the shell.
+        # Unexpected failures must use the validation/error exit instead.
+        print(f"RECONCILIATION_FAILED: {exc}", file=sys.stderr)
+        sys.exit(3)

@@ -93,14 +93,8 @@ if [ "$1" = "--resolve" ]; then
 fi
 
 LOCKDIR="/config/.automations_sync.lock"
-STALE_SECONDS=600
-
-if [ -d "$LOCKDIR" ]; then
-    lock_age=$(( $(date +%s) - $(stat -c %Y "$LOCKDIR" 2>/dev/null || echo 0) ))
-    if [ "$lock_age" -gt "$STALE_SECONDS" ]; then
-        rmdir "$LOCKDIR" 2>/dev/null
-    fi
-fi
+# Age does not prove the owner is dead: a slow fetch may still be running.
+# After a crash, an operator must verify sync has stopped before removing it.
 
 if ! mkdir "$LOCKDIR" 2>/dev/null; then
     echo "LOCK_BUSY"
@@ -166,7 +160,7 @@ echo "git_relation=$RELATION"
 if [ "$RELATION" = "diverged" ]; then
     if git merge origin/main -m "Merge remote changes"; then
         echo "DIVERGED_MERGED_CLEAN"
-        RELATION="same"
+        RELATION="local_ahead"
     else
         git merge --abort
 

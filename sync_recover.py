@@ -49,17 +49,21 @@ def recover(snapshot, config=CONFIG):
     if (config / ".automations_sync.lock").exists():
         raise RuntimeError("Sync lock exists: stop sync and investigate before recovery")
     metadata = snapshot / "git-state.json"
-    if metadata.is_file():
-        import json
-        try:
-            recorded = json.loads(metadata.read_text())["head_before_merge"]
-            current = sync_git_metadata.git("rev-parse", "HEAD", cwd=config)
-        except (OSError, RuntimeError, ValueError, KeyError) as exc:
-            raise RuntimeError(f"Cannot verify Git history: {exc}") from exc
-        if current != recorded:
-            raise RuntimeError(
-                "Git HEAD changed since snapshot: inspect Git metadata and "
-                "resolve Git/HA consistency manually before restoring")
+    if not metadata.is_file():
+        raise RuntimeError("Git metadata missing: manual investigation required")
+    import json
+    try:
+        data = json.loads(metadata.read_text())
+        if not isinstance(data, dict) or data.get("schema") != 1:
+            raise ValueError("Unsupported Git metadata schema")
+        recorded = data["head_before_merge"]
+        current = sync_git_metadata.git("rev-parse", "HEAD", cwd=config)
+    except (OSError, RuntimeError, ValueError, KeyError) as exc:
+        raise RuntimeError(f"Cannot verify Git history: {exc}") from exc
+    if current != recorded:
+        raise RuntimeError(
+            "Git HEAD changed since snapshot: inspect Git metadata and "
+            "resolve Git/HA consistency manually before restoring")
 
     rescue = pathlib.Path(tempfile.mkdtemp(prefix=".git-sync-recovery.", dir=config))
     # The rescue copy is intentionally retained even after successful recovery.

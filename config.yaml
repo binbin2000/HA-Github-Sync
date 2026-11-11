@@ -1,0 +1,31 @@
+name: HA GitHub Sync
+slug: ha_github_sync
+version: "0.1.0"
+description: Sync Home Assistant automations and UI scripts with a Git repository
+url: https://github.com/binbin2000/HA-Github-Sync
+arch: [amd64, aarch64]
+boot: manual
+timeout: 120
+map:
+  - type: homeassistant_config
+    path: /config
+    read_only: false
+  - type: app_config
+    path: /auth
+    read_only: true
+options:
+  mode: check
+  repository: ""
+  branch: main
+  schedule: "17 * * * *"
+  timezone: UTC
+  git_name: HA GitHub Sync
+  git_email: ha-github-sync@localhost
+schema:
+  mode: list(check|once|schedule|inspect)
+  repository: str
+  branch: str
+  schedule: str
+  timezone: str
+  git_name: str
+  git_email: str

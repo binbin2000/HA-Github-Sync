@@ -14,8 +14,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install dependencies
-        run: python3 -m pip install --break-system-packages pyyaml
+        run: python3 -m pip install --break-system-packages pyyaml 'croniter==6.2.4'
       - name: Check shell syntax
         run: bash -n git_sync.sh
       - name: Run unit and regression tests
         run: python3 -m unittest discover -s tests -v
+
+  app-image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the local HA app image
+        run: docker build -t ha-github-sync-test .
+      - name: Start inspect mode against a disposable config without network access
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/ha-app/config" "$RUNNER_TEMP/ha-app/data"
+          printf '%s\n' '{"mode":"inspect"}' > "$RUNNER_TEMP/ha-app/data/options.json"
+          docker run --rm --network none \
+            -v "$RUNNER_TEMP/ha-app/config:/config:ro" \
+            -v "$RUNNER_TEMP/ha-app/data:/data:ro" \
+            ha-github-sync-test | tee "$RUNNER_TEMP/ha-app/log"
+          grep -x NO_RECOVERY_REQUIRED "$RUNNER_TEMP/ha-app/log"

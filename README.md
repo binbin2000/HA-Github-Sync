@@ -1,5 +1,8 @@
 # Home Assistant Automation & Script Sync
 
+For Home Assistant OS, see [installing the HA GitHub Sync app](DOCS.md). The app
+includes the sync engine and scheduler; the standalone setup below is still supported.
+
 This is a small set of scripts that keeps your Home Assistant **automations** and **scripts** backed up to GitHub automatically, in a way that's easy to browse, easy to review, and easy to let an AI assistant edit directly on GitHub — **without ever losing the ability to edit them normally in the Home Assistant UI.**
 
 It was built for one specific setup, not as a general-purpose plugin, so read through this before installing it. It assumes you're reasonably comfortable copying and pasting terminal commands, even if you're not a programmer.

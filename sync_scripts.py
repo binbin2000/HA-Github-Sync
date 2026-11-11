@@ -181,10 +181,6 @@ def bootstrap():
         sys.exit(3)
 
     flat_scripts = load_flat()
-    if not flat_scripts:
-        print("scripts.yaml is empty or missing -- nothing to bootstrap.")
-        sys.exit(0)
-
     write_split(flat_scripts)
     flat_hash = canonical_hash(flat_scripts)
     split_scripts, _ = load_split()

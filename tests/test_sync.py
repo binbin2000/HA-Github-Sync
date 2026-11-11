@@ -36,7 +36,7 @@ class ShellSafetyTests(unittest.TestCase):
 
     def test_reconciliation_failures_abort_before_staging(self):
         check = self.source.index('if [ "$automations_exit" -ge 2 ] || [ "$scripts_exit" -ge 2 ]; then')
-        staging = self.source.index("git add -A -- automations/ scripts/")
+        staging = self.source.index('git add -A -- "${STAGE_PATHS[@]}"')
         self.assertLess(check, staging)
         self.assertRegex(self.source[check:staging], r"exit [1-9]")
 
@@ -46,7 +46,7 @@ class ShellSafetyTests(unittest.TestCase):
                 self.assertRegex(self.source, re.escape('echo "' + marker) + r'(?::[^\n"]*)?"\s*\n\s*exit [1-9]')
         # Push failures intentionally clean up the snapshot before exiting.
         # Both push branches must still report failure with a nonzero exit.
-        push_branches = self.source.split('if ! git push origin HEAD:main; then')[1:]
+        push_branches = self.source.split('if ! git push origin "HEAD:refs/heads/$SYNC_BRANCH"; then')[1:]
         self.assertEqual(len(push_branches), 2)
         for branch in push_branches:
             with self.subTest(marker="GIT_PUSH_FAILED"):
@@ -56,10 +56,10 @@ class ShellSafetyTests(unittest.TestCase):
 
     def test_changed_head_blocks_rollback_before_restore(self):
         start = self.source.index('if [ "$automations_exit" -ge 2 ]')
-        end = self.source.index('git add -A -- automations/ scripts/', start)
+        end = self.source.index('git add -A -- "${STAGE_PATHS[@]}"', start)
         failure_path = self.source[start:end]
         guard = failure_path.index('if [ "$(git rev-parse HEAD)" != "$LOCAL_HASH" ]; then')
-        restore = failure_path.index('python3 sync_snapshot.py restore "$SNAPSHOT_DIR"')
+        restore = failure_path.index('run_helper sync_snapshot.py restore "$SNAPSHOT_DIR"')
         self.assertLess(guard, restore)
         self.assertIn('RECOVERY_REQUIRED: Git HEAD changed', failure_path[guard:restore])
         self.assertRegex(failure_path[guard:restore], r'exit 5')
@@ -70,13 +70,13 @@ class ShellSafetyTests(unittest.TestCase):
             if "git push " in line and not line.lstrip().startswith("#")
         ]
         self.assertTrue(commands)
-        self.assertTrue(all("origin HEAD:main" in line for line in commands))
+        self.assertTrue(all('origin "HEAD:refs/heads/$SYNC_BRANCH"' in line for line in commands))
 
     def test_failed_push_keeps_local_commit_and_discards_snapshot(self):
         source = self.source
         self.assertEqual(source.count("discard_snapshot_after_git_failure || exit 5"), 2)
         self.assertEqual(source.count("GIT_PUSH_FAILED: local commit preserved"), 2)
-        for part in source.split('if ! git push origin HEAD:main; then')[1:]:
+        for part in source.split('if ! git push origin "HEAD:refs/heads/$SYNC_BRANCH"; then')[1:]:
             branch = part.split("fi", 1)[0]
             self.assertIn("discard_snapshot_after_git_failure || exit 5", branch)
             self.assertNotIn("git reset", branch)
@@ -85,7 +85,7 @@ class ShellSafetyTests(unittest.TestCase):
     def test_interrupted_snapshot_blocks_before_checkout_and_reconciliation(self):
         guard = self.source.index('echo "RECOVERY_REQUIRED:')
         checkout = self.source.index('git checkout HEAD -- automations/')
-        reconciliation = self.source.index('python3 sync_automations.py')
+        reconciliation = self.source.index('run_helper sync_automations.py')
         self.assertLess(guard, checkout)
         self.assertLess(guard, reconciliation)
         self.assertIn('for previous_snapshot in /config/.git-sync-backup.*; do', self.source)

@@ -84,7 +84,8 @@ def main():
         return 2
     action = sys.argv[1]
     snapshot = pathlib.Path(sys.argv[2]).resolve()
-    if snapshot.parent != CONFIG or not snapshot.name.startswith(".git-sync-backup."):
+    # Home Assistant's SSH app can expose /config as a symlink to /homeassistant.
+    if snapshot.parent != CONFIG.resolve() or not snapshot.name.startswith(".git-sync-backup."):
         print("Invalid snapshot location", file=sys.stderr)
         return 2
     try:

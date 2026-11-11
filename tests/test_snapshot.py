@@ -12,6 +12,34 @@ spec.loader.exec_module(snapshot)
 
 
 class SnapshotTests(unittest.TestCase):
+    def test_cli_round_trip_when_config_is_a_symlink(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            real_config = root / "homeassistant"
+            real_config.mkdir()
+            config = root / "config"
+            config.symlink_to(real_config, target_is_directory=True)
+            backup = config / ".git-sync-backup.test"
+            backup.mkdir()
+            flat = config / "automations.yaml"
+            flat.write_text("original")
+            with patch.object(snapshot, "CONFIG", config):
+                def invoke(action, path):
+                    with patch.object(snapshot.sys, "argv", ["sync_snapshot.py", action, str(path)]):
+                        return snapshot.main()
+
+                outside = root / ".git-sync-backup.outside"
+                outside.mkdir()
+                self.assertEqual(invoke("save", outside), 2)
+                self.assertEqual(list(outside.iterdir()), [])
+                self.assertEqual(invoke("save", backup), 0)
+                self.assertTrue((backup / ".complete").is_file())
+                flat.write_text("newer")
+                self.assertEqual(invoke("restore", backup), 0)
+                self.assertEqual(flat.read_text(), "original")
+                self.assertEqual(invoke("discard", backup), 0)
+                self.assertFalse(backup.exists())
+
     def test_round_trip_both_domains(self):
         with tempfile.TemporaryDirectory() as temp:
             root = pathlib.Path(temp)

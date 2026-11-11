@@ -162,6 +162,44 @@ class AcceptanceTests(unittest.TestCase):
         self.assertFalse((self.config / 'automations/kitchen_ui.yaml').exists())
         self.assertFalse(self.snapshots())
 
+    def test_bundled_helpers_push_only_the_configured_branch(self):
+        tools = self.base / 'bundled tools'
+        tools.mkdir()
+        self.git('switch', '-c', 'ha-sync/pilot')
+        self.git('checkout', 'HEAD', '--', 'automations/', 'scripts/')
+        for source in [self.config / 'git_sync.sh', *self.config.glob('sync_*.py')]:
+            shutil.copy2(source, tools / source.name)
+            self.git('rm', source.name)
+        self.commit(self.config, 'Keep sync code outside the HA worktree')
+        self.git('push', 'origin', 'HEAD:refs/heads/ha-sync/pilot')
+        self.cleanup_split()
+        self.replace(self.config, 'automations.yaml', 'Kitchen', 'Kitchen Pilot')
+        wrong = self.run_cmd('bash', str(tools / 'git_sync.sh'), check=False)
+        self.assertEqual(wrong.returncode, 4)
+        self.assertIn('GIT_BRANCH_MISMATCH', wrong.stdout)
+        self.run_cmd('bash', str(tools / 'git_sync.sh'),
+                     env=dict(self.env, HA_SYNC_BRANCH='ha-sync/pilot'))
+        self.assertEqual(self.remote_head(), self.initial)
+        self.assertEqual(self.git('--git-dir', str(self.remote), 'rev-parse',
+                                  'refs/heads/ha-sync/pilot'), self.head())
+        self.assertIn('Kitchen Pilot', self.git('--git-dir', str(self.remote), 'show',
+                      'ha-sync/pilot:automations/kitchen_pilot.yaml'))
+        self.assertFalse(self.snapshots())
+
+    def test_empty_scripts_can_bootstrap_and_remain_empty(self):
+        self.git('checkout', 'HEAD', '--', 'automations/', 'scripts/')
+        self.git('rm', 'scripts/hello.yaml')
+        (self.config / 'scripts.yaml').write_text('{}\n')
+        self.run_cmd('python3', 'sync_scripts.py', '--bootstrap')
+        self.commit(self.config, 'Empty script domain')
+        self.git('push', 'origin', 'main')
+        self.cleanup_split()
+        head = self.head()
+        self.sync()
+        self.assertEqual(self.head(), head)
+        self.assertEqual(self.remote_head(), head)
+        self.assertEqual((self.config / 'scripts.yaml').read_text(), '{}\n')
+
     def test_05_changed_head_refuses_automatic_and_explicit_restore(self):
         self.replace(self.config, 'automations.yaml', 'Kitchen', 'Kitchen UI')
         self.replace(self.peer, 'automations/kitchen.yaml', 'Kitchen', 'Kitchen Remote')
@@ -228,7 +266,7 @@ class AcceptanceTests(unittest.TestCase):
         if target == 'reconcile':
             name, real = 'python3', shutil.which('python3')
             script = f'''#!/bin/bash
-if [ "$1" = sync_automations.py ] && [ "$#" = 1 ]; then
+if [ "${{1##*/}}" = sync_automations.py ] && [ "$#" = 1 ]; then
   {real} "$@"
   result=$?
   touch "{marker}"

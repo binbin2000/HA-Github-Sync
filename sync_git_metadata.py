@@ -23,11 +23,12 @@ def capture(snapshot, config=pathlib.Path("/config")):
     path = snapshot / "git-state.json"
     if path.exists():
         raise RuntimeError("Git state already recorded; refusing overwrite")
+    branch = git("symbolic-ref", "--short", "HEAD", cwd=config)
     data = {
         "schema": 1,
         "head_before_merge": git("rev-parse", "HEAD", cwd=config),
-        "remote_before_merge": git("rev-parse", "refs/remotes/origin/main", cwd=config),
-        "branch": git("symbolic-ref", "--short", "HEAD", cwd=config),
+        "remote_before_merge": git("rev-parse", f"refs/remotes/origin/{branch}", cwd=config),
+        "branch": branch,
     }
     atomic_write_text(path, json.dumps(data, indent=2) + "\n")
     return data
@@ -46,7 +47,7 @@ def inspect(snapshot, config=pathlib.Path("/config")):
         branch = data["branch"]
         current = git("rev-parse", "HEAD", cwd=config)
         return (f"Git branch: {branch}; HEAD before merge: {before}; "
-                f"origin/main before merge: {remote}; current HEAD: {current}; "
+                f"origin/{branch} before merge: {remote}; current HEAD: {current}; "
                 f"changed: {current != before}. Git history is never reset automatically.")
     except (OSError, RuntimeError, ValueError, KeyError) as exc:
         return f"GIT_METADATA_UNAVAILABLE: {exc}; manual investigation required"

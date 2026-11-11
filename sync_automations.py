@@ -228,10 +228,6 @@ def bootstrap():
             print(f"  - {p}", file=sys.stderr)
         sys.exit(3)
 
-    if not flat_automations:
-        print("automations.yaml is empty or missing -- nothing to bootstrap.")
-        sys.exit(0)
-
     write_split(flat_automations)
     flat_hash = canonical_hash(flat_automations)
     split_hash = canonical_hash(load_split())

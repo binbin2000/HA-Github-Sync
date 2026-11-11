@@ -4,7 +4,7 @@
 # NOTE: this file must NOT live inside /config/scripts/ or
 # /config/automations/ -- both of those directories are transient
 # split targets (see below) and get rm -rf'd at the end of most runs.
-# Keep this script directly in /config/.
+# Keep this script alongside its Python helpers.
 #
 # Usage:
 #   bash git_sync.sh
@@ -74,7 +74,18 @@
 #   scripts_exit_code=0/1/2/3     - scripts result (see
 #                                   sync_scripts.py's docstring)
 
+HELPER_DIR=$(cd -- "$(dirname -- "$0")" && pwd -P) || exit 1
+run_helper() { local helper=$1; shift; python3 "$HELPER_DIR/$helper" "$@"; }
+
 cd /config || { echo "ERROR: cannot cd to /config"; exit 1; }
+
+SYNC_BRANCH=${HA_SYNC_BRANCH:-main}
+REMOTE_REF="refs/remotes/origin/$SYNC_BRANCH"
+if ! git check-ref-format "refs/heads/$SYNC_BRANCH" ||
+   [ "$(git symbolic-ref --quiet --short HEAD)" != "$SYNC_BRANCH" ]; then
+    echo "GIT_BRANCH_MISMATCH: check the configured branch and local checkout"
+    exit 4
+fi
 
 RESOLVE_DOMAIN=""
 RESOLVE_DIRECTION=""
@@ -112,7 +123,7 @@ done
 
 # Verify local changes before checkout. The sync deliberately removes tracked
 # split files after a successful run; those deletions are expected.
-if ! python3 sync_preflight.py; then
+if ! run_helper sync_preflight.py; then
     echo "LOCAL_CHANGES_DETECTED"
     exit 4
 fi
@@ -124,7 +135,7 @@ fi
 git checkout HEAD -- automations/ 2>/dev/null
 git checkout HEAD -- scripts/ 2>/dev/null
 
-if ! git fetch origin main; then
+if ! git fetch origin "refs/heads/$SYNC_BRANCH:$REMOTE_REF"; then
     echo "GIT_FETCH_FAILED"
     exit 1
 fi
@@ -133,23 +144,23 @@ fi
 # A retained snapshot requires explicit recovery, never automatic Git reset.
 # Keep a recoverable snapshot across both reconciliation domains.
 SNAPSHOT_DIR=$(mktemp -d /config/.git-sync-backup.XXXXXXXX) || exit 5
-if ! python3 sync_snapshot.py save "$SNAPSHOT_DIR"; then
+if ! run_helper sync_snapshot.py save "$SNAPSHOT_DIR"; then
     echo "SNAPSHOT_FAILED: inspect $SNAPSHOT_DIR"
     exit 5
 fi
-if ! python3 sync_git_metadata.py capture "$SNAPSHOT_DIR"; then
+if ! run_helper sync_git_metadata.py capture "$SNAPSHOT_DIR"; then
     echo "GIT_METADATA_FAILED: inspect $SNAPSHOT_DIR"
     exit 5
 fi
 
 LOCAL_HASH=$(git rev-parse HEAD)
-REMOTE_HASH=$(git rev-parse origin/main)
+REMOTE_HASH=$(git rev-parse "$REMOTE_REF")
 
 if [ "$LOCAL_HASH" = "$REMOTE_HASH" ]; then
     RELATION="same"
-elif git merge-base --is-ancestor HEAD origin/main; then
+elif git merge-base --is-ancestor HEAD "$REMOTE_REF"; then
     RELATION="remote_ahead"
-elif git merge-base --is-ancestor origin/main HEAD; then
+elif git merge-base --is-ancestor "$REMOTE_REF" HEAD; then
     RELATION="local_ahead"
 else
     RELATION="diverged"
@@ -158,7 +169,7 @@ fi
 echo "git_relation=$RELATION"
 
 if [ "$RELATION" = "diverged" ]; then
-    if git merge origin/main -m "Merge remote changes"; then
+    if git merge "$REMOTE_REF" -m "Merge remote changes"; then
         echo "DIVERGED_MERGED_CLEAN"
         RELATION="local_ahead"
     else
@@ -170,7 +181,7 @@ if [ "$RELATION" = "diverged" ]; then
 fi
 
 if [ "$RELATION" = "remote_ahead" ]; then
-    if ! git merge --ff-only origin/main; then
+    if ! git merge --ff-only "$REMOTE_REF"; then
         echo "GIT_MERGE_FAILED: snapshot and Git metadata retained at $SNAPSHOT_DIR"
         exit 1
     fi
@@ -180,7 +191,7 @@ fi
 # Once a Git commit exists, failed publication must preserve that commit.
 # Discard only the temporary snapshot; the next run can retry the push.
 discard_snapshot_after_git_failure() {
-    if ! python3 sync_snapshot.py discard "$SNAPSHOT_DIR"; then
+    if ! run_helper sync_snapshot.py discard "$SNAPSHOT_DIR"; then
         echo "SNAPSHOT_CLEANUP_FAILED: inspect $SNAPSHOT_DIR"
         return 5
     fi
@@ -192,12 +203,12 @@ discard_snapshot_after_git_failure() {
 # automations/ = force split).
 if [ "$RESOLVE_DOMAIN" = "automations" ]; then
     if [ "$RESOLVE_DIRECTION" = "local" ]; then
-        python3 sync_automations.py --force flat
+        run_helper sync_automations.py --force flat
     else
-        python3 sync_automations.py --force split
+        run_helper sync_automations.py --force split
     fi
 else
-    python3 sync_automations.py
+    run_helper sync_automations.py
 fi
 automations_exit=$?
 echo "exit_code=$automations_exit"
@@ -205,12 +216,12 @@ echo "exit_code=$automations_exit"
 # Same for scripts.
 if [ "$RESOLVE_DOMAIN" = "scripts" ]; then
     if [ "$RESOLVE_DIRECTION" = "local" ]; then
-        python3 sync_scripts.py --force flat
+        run_helper sync_scripts.py --force flat
     else
-        python3 sync_scripts.py --force split
+        run_helper sync_scripts.py --force split
     fi
 else
-    python3 sync_scripts.py
+    run_helper sync_scripts.py
 fi
 scripts_exit=$?
 echo "scripts_exit_code=$scripts_exit"
@@ -224,15 +235,22 @@ if [ "$automations_exit" -ge 2 ] || [ "$scripts_exit" -ge 2 ]; then
         echo "RECOVERY_REQUIRED: Git HEAD changed; HA files untouched; snapshot retained at $SNAPSHOT_DIR"
         exit 5
     fi
-    if ! python3 sync_snapshot.py restore "$SNAPSHOT_DIR"; then
+    if ! run_helper sync_snapshot.py restore "$SNAPSHOT_DIR"; then
         echo "ROLLBACK_FAILED: snapshot retained at $SNAPSHOT_DIR"
         exit 5
     fi
-    python3 sync_snapshot.py discard "$SNAPSHOT_DIR" || exit 5
+    run_helper sync_snapshot.py discard "$SNAPSHOT_DIR" || exit 5
     exit 3
 fi
 
-if ! git add -A -- automations/ scripts/; then
+# A domain can be empty and have no tracked split path at all.
+STAGE_PATHS=()
+for domain in automations scripts; do
+    if [ -d "$domain" ] || [ -n "$(git ls-files -- "$domain/")" ]; then
+        STAGE_PATHS+=("$domain/")
+    fi
+done
+if [ "${#STAGE_PATHS[@]}" -gt 0 ] && ! git add -A -- "${STAGE_PATHS[@]}"; then
     echo "GIT_ADD_FAILED"
     exit 1
 fi
@@ -241,20 +259,20 @@ if ! git diff --cached --quiet; then
         echo "GIT_COMMIT_FAILED"
         exit 1
     fi
-    if ! git push origin HEAD:main; then
+    if ! git push origin "HEAD:refs/heads/$SYNC_BRANCH"; then
         echo "GIT_PUSH_FAILED: local commit preserved; retry on next sync"
         discard_snapshot_after_git_failure || exit 5
         exit 1
     fi
 elif [ "$RELATION" = "local_ahead" ]; then
-    if ! git push origin HEAD:main; then
+    if ! git push origin "HEAD:refs/heads/$SYNC_BRANCH"; then
         echo "GIT_PUSH_FAILED: local commit preserved; retry on next sync"
         discard_snapshot_after_git_failure || exit 5
         exit 1
     fi
 fi
 
-if ! python3 sync_snapshot.py discard "$SNAPSHOT_DIR"; then
+if ! run_helper sync_snapshot.py discard "$SNAPSHOT_DIR"; then
     echo "SNAPSHOT_CLEANUP_FAILED: inspect $SNAPSHOT_DIR"
     exit 5
 fi

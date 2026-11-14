@@ -83,6 +83,13 @@ apply setting changes. It runs one sync at a time and logs the next scheduled
 time and each run's result. If HA or the app was down at the scheduled time, it
 waits for the next one. The app does not reload or restart Home Assistant.
 
+While the app is running in `schedule`, open **Open Web UI** on the app page
+or enable **Show in sidebar**. Press **Sync now** to run a sync immediately.
+The page shows the next scheduled time and the result of the latest run since
+the app started. An administrator session is required via Home Assistant ingress.
+Manual and scheduled requests share one runner. The button is disabled while
+a run is queued or in progress; a scheduled time reached during a run is skipped.
+
 Use `inspect` to list retained snapshots without a Git connection. For recovery,
 stop the scheduler and follow the [recovery guide](README.md#safe-recovery-after-interrupted-synchronization-v02).
 Failures appear in the app log; this version does not send HA notifications.

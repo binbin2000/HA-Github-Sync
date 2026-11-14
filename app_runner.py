@@ -12,6 +12,8 @@ from zoneinfo import ZoneInfo
 
 from croniter import croniter
 
+from app_ui import SyncRequests, serve_ui
+
 SOURCE = Path(__file__).resolve().parent
 CONFIG = Path('/config')
 DATA = Path('/data')
@@ -135,22 +137,25 @@ def main():
     if mode == 'once':
         return run_once(options, env)
 
-    stopping = False
-
-    def stop(*_):
-        nonlocal stopping
-        stopping = True
-
-    signal.signal(signal.SIGTERM, stop)
-    signal.signal(signal.SIGINT, stop)
     timezone = ZoneInfo(options['timezone'])
-    while not stopping:
-        next_run = croniter(options['schedule'], datetime.now(timezone)).get_next(datetime)
-        print(f'Next sync: {next_run.isoformat(timespec="minutes")} ({timezone.key})', flush=True)
-        while not stopping and (remaining := next_run.timestamp() - time.time()) > 0:
-            time.sleep(min(remaining, 5))
-        if not stopping:
-            run_once(options, env)
+    requests = SyncRequests()
+    with serve_ui(requests):
+        signal.signal(signal.SIGTERM, lambda *_: requests.stop())
+        signal.signal(signal.SIGINT, lambda *_: requests.stop())
+        while not requests.stopping:
+            next_run = croniter(options['schedule'], datetime.now(timezone)).get_next(datetime)
+            when = next_run.isoformat(timespec='minutes')
+            requests.set_next(when)
+            print(f'Next sync: {when} ({timezone.key})', flush=True)
+            while not requests.stopping:
+                remaining = next_run.timestamp() - time.time()
+                source = requests.claim(due=remaining <= 0)
+                if source:
+                    print(f'Starting {source} sync.', flush=True)
+                    code = run_once(options, env)
+                    requests.finish(code)
+                    break
+                requests.wake.wait(timeout=max(0, min(remaining, 5)))
     return 0
 
 

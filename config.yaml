@@ -1,11 +1,16 @@
 name: HA GitHub Sync
 slug: ha_github_sync
-version: "0.1.0"
+version: "0.2.0"
 description: Sync Home Assistant automations and UI scripts with a Git repository
 url: https://github.com/binbin2000/HA-Github-Sync
 arch: [amd64, aarch64]
 boot: manual
 timeout: 120
+ingress: true
+ingress_port: 8099
+panel_admin: true
+panel_title: HA GitHub Sync
+panel_icon: mdi:sync
 map:
   - type: homeassistant_config
     path: /config
